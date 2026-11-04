@@ -1964,4 +1964,237 @@
       if (window.scrollY >= s.offsetTop - 120) current = s.id;
     });
     navLinks.forEach(a => {
-      a.style.color = a.getAttribu
+      a.style.color = a.getAttribute('href').substring(1) === current
+        ? 'var(--gold)' : '';
+    });
+  });
+
+  // ── NEURAL NETWORK CANVAS
+  (() => {
+    const canvas = document.getElementById('neuralCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    let W, H;
+    let mouse = { x: -1000, y: -1000 };
+
+    function resize() {
+      const rect = canvas.getBoundingClientRect();
+      W = rect.width;
+      H = rect.height;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    canvas.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = e.clientX - rect.left;
+      mouse.y = e.clientY - rect.top;
+    });
+    canvas.addEventListener('mouseleave', () => {
+      mouse.x = -1000;
+      mouse.y = -1000;
+    });
+
+    // Layers: input, hidden1, hidden2, output
+    const layerSizes = [4, 6, 6, 3];
+    const nodes = [];
+    const connections = [];
+    const pulses = [];
+
+    // Create nodes
+    const totalLayers = layerSizes.length;
+    layerSizes.forEach((size, li) => {
+      const x = (li + 0.5) / totalLayers * W;
+      for (let ni = 0; ni < size; ni++) {
+        const y = (ni + 0.5) / size * H;
+        nodes.push({
+          x, y,
+          baseX: x,
+          baseY: y,
+          layer: li,
+          radius: li === 0 || li === totalLayers - 1 ? 5 : 4,
+          phase: Math.random() * Math.PI * 2,
+          speed: 0.3 + Math.random() * 0.4,
+          amplitude: 3 + Math.random() * 5,
+          glow: 0
+        });
+      }
+    });
+
+    // Create connections between adjacent layers
+    let idx = 0;
+    for (let li = 0; li < totalLayers - 1; li++) {
+      const start = nodes.filter(n => n.layer === li);
+      const end = nodes.filter(n => n.layer === li + 1);
+      start.forEach(s => {
+        end.forEach(e => {
+          connections.push({
+            from: s,
+            to: e,
+            weight: 0.15 + Math.random() * 0.35,
+            active: 0
+          });
+        });
+      });
+    }
+
+    // Spawn a signal pulse
+    function spawnPulse() {
+      const conn = connections[Math.floor(Math.random() * connections.length)];
+      pulses.push({
+        conn,
+        t: 0,
+        speed: 0.008 + Math.random() * 0.012,
+        color: Math.random() > 0.5
+          ? { r: 245, g: 166, b: 35 }
+          : { r: 255, g: 209, b: 128 }
+      });
+    }
+
+    let time = 0;
+    function draw() {
+      time += 0.016;
+      ctx.clearRect(0, 0, W, H);
+
+      // Background subtle grid
+      ctx.strokeStyle = 'rgba(245,166,35,0.03)';
+      ctx.lineWidth = 0.5;
+      for (let x = 0; x < W; x += 30) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, H);
+        ctx.stroke();
+      }
+      for (let y = 0; y < H; y += 30) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+      }
+
+      // Animate nodes (gentle float)
+      nodes.forEach(n => {
+        n.x = n.baseX + Math.sin(time * n.speed + n.phase) * n.amplitude;
+        n.y = n.baseY + Math.cos(time * n.speed * 0.7 + n.phase) * n.amplitude * 0.6;
+
+        // Mouse repulsion
+        const dx = n.x - mouse.x;
+        const dy = n.y - mouse.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 80) {
+          const force = (80 - dist) / 80 * 12;
+          n.x += (dx / dist) * force;
+          n.y += (dy / dist) * force;
+          n.glow = Math.min(1, n.glow + 0.1);
+        } else {
+          n.glow *= 0.95;
+        }
+      });
+
+      // Draw connections
+      connections.forEach(c => {
+        c.active *= 0.96;
+        const alpha = 0.04 + c.weight * 0.08 + c.active * 0.4;
+        ctx.beginPath();
+        ctx.moveTo(c.from.x, c.from.y);
+
+        // Slight curve
+        const mx = (c.from.x + c.to.x) / 2;
+        const my = (c.from.y + c.to.y) / 2 + (c.from.y - c.to.y) * 0.08;
+        ctx.quadraticCurveTo(mx, my, c.to.x, c.to.y);
+
+        ctx.strokeStyle = `rgba(245,166,35,${alpha})`;
+        ctx.lineWidth = 0.5 + c.active * 1.5;
+        ctx.stroke();
+      });
+
+      // Animate pulses
+      if (Math.random() < 0.08) spawnPulse();
+
+      for (let i = pulses.length - 1; i >= 0; i--) {
+        const p = pulses[i];
+        p.t += p.speed;
+
+        if (p.t >= 1) {
+          p.conn.to.glow = 1;
+          p.conn.active = 1;
+          pulses.splice(i, 1);
+          continue;
+        }
+
+        const c = p.conn;
+        // Quadratic bezier position
+        const t = p.t;
+        const mx = (c.from.x + c.to.x) / 2;
+        const my = (c.from.y + c.to.y) / 2 + (c.from.y - c.to.y) * 0.08;
+        const px = (1 - t) * (1 - t) * c.from.x + 2 * (1 - t) * t * mx + t * t * c.to.x;
+        const py = (1 - t) * (1 - t) * c.from.y + 2 * (1 - t) * t * my + t * t * c.to.y;
+
+        // Glow trail
+        const grad = ctx.createRadialGradient(px, py, 0, px, py, 10);
+        grad.addColorStop(0, `rgba(${p.color.r},${p.color.g},${p.color.b},0.8)`);
+        grad.addColorStop(1, `rgba(${p.color.r},${p.color.g},${p.color.b},0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(px, py, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Core
+        ctx.beginPath();
+        ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${p.color.r},${p.color.g},${p.color.b},1)`;
+        ctx.fill();
+      }
+
+      // Draw nodes
+      nodes.forEach(n => {
+        const isIO = n.layer === 0 || n.layer === totalLayers - 1;
+        const baseAlpha = isIO ? 0.9 : 0.6;
+        const glowAlpha = baseAlpha + n.glow * 0.4;
+        const r = n.radius + n.glow * 3;
+
+        // Outer glow
+        if (n.glow > 0.05) {
+          const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 3);
+          grad.addColorStop(0, `rgba(245,166,35,${n.glow * 0.3})`);
+          grad.addColorStop(1, 'rgba(245,166,35,0)');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, r * 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Node body
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(245,166,35,${glowAlpha})`;
+        ctx.fill();
+
+        // Inner bright core
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r * 0.4, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${0.3 + n.glow * 0.5})`;
+        ctx.fill();
+
+        // Layer labels (on first node of each layer)
+        const layerNodes = nodes.filter(nd => nd.layer === n.layer);
+        if (layerNodes[0] === n) {
+          const labels = ['INPUT', 'HIDDEN', 'HIDDEN', 'OUTPUT'];
+          ctx.font = '500 8px "JetBrains Mono", monospace';
+          ctx.fillStyle = 'rgba(245,166,35,0.25)';
+          ctx.textAlign = 'center';
+          ctx.fillText(labels[n.layer], n.baseX, 18);
+        }
+      });
+
+      requestAnimationFrame(draw);
+    }
+    draw();
+  })();
+</script>
+</body>
+</html>

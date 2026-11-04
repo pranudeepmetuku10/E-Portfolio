@@ -1981,4 +1981,10 @@
       if (window.scrollY >= s.offsetTop - 120) current = s.id;
     });
     navLinks.forEach(a => {
-      a.style.color = a.getAttribu
+      a.style.color = a.getAttribute('href').substring(1) === current
+        ? 'var(--gold)' : '';
+    });
+  });
+</script>
+</body>
+</html>
